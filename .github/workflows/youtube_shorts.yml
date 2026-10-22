@@ -18,17 +18,17 @@ jobs:
       with:
         node-version: '18'
 
-    - name: Install Library Tambahan (YouTube API & Fetch)
-      run: npm install googleapis node-fetch --no-audit --no-fund
+    - name: Install FFmpeg untuk Konversi Video YouTube
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+    - name: Install Library Tambahan
+      run: npm install googleapis --no-audit --no-fund
 
     - name: Eksekusi Auto-Upload ke YouTube
       env:
-        # Menarik 3 Kunci Sakti dari brankas rahasia GitHub Secrets
         YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
         YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
         YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-        
-        # Menerima data payload link video matang dari web lu
         VIDEO_URL: ${{ github.event.client_payload.finalVideoUrl }}
         VIDEO_TITLE: ${{ github.event.client_payload.judulVideo }}
         VIDEO_DESC: ${{ github.event.client_payload.deskripsiVideo }}
