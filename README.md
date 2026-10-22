@@ -1,0 +1,1 @@
+# klipika-auto-render
