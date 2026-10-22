@@ -1,6 +1,5 @@
 const { google } = require('googleapis');
 const fs = require('fs');
-const { execSync } = require('child_process');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 const streamPipeline = promisify(pipeline);
@@ -26,25 +25,18 @@ const youtube = google.youtube({
     auth: oauth2Client
 });
 
-async function downloadConvertAndUpload() {
+async function downloadAndUploadFast() {
     try {
-        console.log(`📥 [1/3] Mendownload video mentah dari cloud: ${VIDEO_URL}`);
+        console.log(`📥 [1/2] Mendownload video matang dari cloud: ${VIDEO_URL}`);
         const res = await fetch(VIDEO_URL);
         if (!res.ok) throw new Error(`Gagal mendownload video: ${res.statusText}`);
         
-        const rawPath = './raw_video.webm';
-        const fileStream = fs.createWriteStream(rawPath);
+        const videoPath = './temp_video.webm';
+        const fileStream = fs.createWriteStream(videoPath);
         await streamPipeline(res.body, fileStream);
-        console.log("✅ Download mentah selesai.");
+        console.log("✅ Download video selesai dalam hitungan detik.");
 
-        console.log("⚙️ [2/3] Mengonversi format video agar 100% kompatibel dengan YouTube...");
-        const finalPath = './output_video.mp4';
-        
-        // Perintah FFmpeg: Convert WebM browser ke MP4 standar H.264 / AAC (Standar YouTube)
-        execSync(`ffmpeg -i ${rawPath} -c:v libx264 -preset ultrafast -c:a aac -strict experimental ${finalPath}`, { stdio: 'inherit' });
-        console.log("✅ Konversi ke MP4 berhasil.");
-
-        console.log("🚀 [3/3] Mengunggah video matang ke YouTube Shorts...");
+        console.log("🚀 [2/2] Mengunggah video langsung ke YouTube Shorts...");
         const response = await youtube.videos.insert({
             part: 'snippet,status',
             requestBody: {
@@ -60,20 +52,18 @@ async function downloadConvertAndUpload() {
                 }
             },
             media: {
-                body: fs.createReadStream(finalPath)
+                body: fs.createReadStream(videoPath)
             }
         });
 
-        console.log(`🎉 BINGO! Video sukses di-upload dan diproses YouTube!`);
+        console.log(`🎉 BINGO! Video sukses nangkring di YouTube!`);
         console.log(`🔗 Link Video: https://youtu.be/${response.data.id}`);
 
-        // Hapus file sampah lokal
-        if (fs.existsSync(rawPath)) fs.unlinkSync(rawPath);
-        if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
+        if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
     } catch (error) {
         console.error("❌ Gagal:", error.message);
         process.exit(1);
     }
 }
 
-downloadConvertAndUpload();
+downloadAndUploadFast();
