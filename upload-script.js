@@ -1,6 +1,5 @@
 const { google } = require('googleapis');
 const fs = require('fs');
-const fetch = require('node-fetch');
 
 const CLIENT_ID = process.env.YOUTUBE_CLIENT_ID;
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
@@ -26,16 +25,30 @@ const youtube = google.youtube({
 async function downloadAndUpload() {
     try {
         console.log(`📥 [1/2] Mendownload video dari cloud: ${VIDEO_URL}`);
+        
+        // Menggunakan fetch bawaan Node.js v18 (Tanpa require node-fetch)
         const res = await fetch(VIDEO_URL);
         if (!res.ok) throw new Error(`Gagal mendownload video dari URL: ${res.statusText}`);
         
         const videoPath = './temp_video.webm';
         const fileStream = fs.createWriteStream(videoPath);
+        
         await new Promise((resolve, reject) => {
-            res.body.pipe(fileStream);
-            res.body.on('error', reject);
-            fileStream.on('finish', resolve);
+            const reader = res.body.getReader();
+            const pump = async () => {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        fileStream.end();
+                        break;
+                    }
+                    fileStream.write(Buffer.from(value));
+                }
+            };
+            pump().then(resolve).catch(reject);
+            fileStream.on('error', reject);
         });
+        
         console.log("✅ Video berhasil diunduh ke server lokal GitHub.");
 
         console.log("🚀 [2/2] Mengunggah video ke YouTube Shorts...");
@@ -49,7 +62,7 @@ async function downloadAndUpload() {
                     categoryId: '25' // News & Politics
                 },
                 status: {
-                    privacyStatus: 'public', // Bisa diubah ke 'private' atau 'unlisted' kalau mau dicek dulu
+                    privacyStatus: 'public',
                     selfDeclaredMadeForKids: false
                 }
             },
