@@ -19,6 +19,8 @@ const deskripsi = payload.deskripsiVideo || "Video otomatis dari Cloud Klipika."
 const scenes = payload.scenes || [
     { url: "https://images.pexels.com/photos/3944688/pexels-photo-3944688.jpeg?auto=compress&cs=tinysrgb&w=720&h=1280&dpr=1", type: "image", duration: 5 }
 ];
+// Tangkap URL Audio VO jika dikirim dari UI
+const audioUrl = payload.audioUrl || null;
 
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, "https://developers.google.com/oauthplayground");
 oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
@@ -33,18 +35,40 @@ async function downloadFile(url, filepath) {
 
 async function main() {
     console.log(`🎬 Memulai render multi-adegan (${scenes.length} adegan)...`);
+    const rawOutputVideo = './raw_output.mp4';
     const outputFilePath = './output_video.mp4';
     let clipPaths = [];
+    let tempAudioPath = './temp_audio.mp3';
+    let hasAudio = false;
 
     try {
-        // 1. Download dan render tiap adegan menjadi klip terpisah (.mp4)
+        // 1. Download Audio VO jika ada URL-nya
+        if (audioUrl && audioUrl.startsWith('http')) {
+            try {
+                console.log(`📥 Mendownload Audio VO dari: ${audioUrl}`);
+                await downloadFile(audioUrl, tempAudioPath);
+                hasAudio = true;
+                console.log("✅ Audio VO berhasil didownload!");
+            } catch (err) {
+                console.log("⚠️ Gagal download audio VO, lanjut tanpa audio:", err.message);
+            }
+        }
+
+        // 2. Download dan render tiap adegan menjadi klip terpisah (.mp4)
         for (let i = 0; i < scenes.length; i++) {
             let scene = scenes[i];
             let tempFile = `./temp_asset_${i}.${scene.type === 'video' ? 'mp4' : 'jpg'}`;
             let clipOutput = `./clip_${i}.mp4`;
             
             console.log(`📥 Mendownload aset ${i+1}/${scenes.length}: ${scene.url}`);
-            await downloadFile(scene.url, tempFile);
+            try {
+                await downloadFile(scene.url, tempFile);
+            } catch (e) {
+                console.log(`⚠️ Gagal download aset ${i+1}, pakai gambar default.`);
+                scene.url = "https://images.pexels.com/photos/3944688/pexels-photo-3944688.jpeg?auto=compress&cs=tinysrgb&w=720&h=1280&dpr=1";
+                scene.type = "image";
+                await downloadFile(scene.url, tempFile);
+            }
 
             console.log(`🎞️ Merender klip ${i+1} (${scene.duration} detik)...`);
             await new Promise((resolve, reject) => {
@@ -70,7 +94,7 @@ async function main() {
             clipPaths.push(clipOutput);
         }
 
-        // 2. Gabungkan (Concatenate) semua klip adegan menjadi satu video utuh
+        // 3. Gabungkan (Concatenate) semua klip adegan menjadi satu video utuh
         console.log("🔗 Menggabungkan seluruh klip adegan...");
         let listTxtContent = clipPaths.map(p => `file '${path.resolve(p)}'`).join('\n');
         fs.writeFileSync('./list.txt', listTxtContent);
@@ -80,12 +104,33 @@ async function main() {
             .input('./list.txt')
             .inputOptions(['-f concat', '-safe 0'])
             .outputOptions(['-c copy'])
-            .save(outputFilePath)
+            .save(rawOutputVideo)
             .on('end', () => resolve())
             .on('error', (err) => reject(err));
         });
 
-        console.log("✅ Perakitan video selesai! Mengunggah ke YouTube...");
+        // 4. MENGGABUNGKAN VIDEO DENGAN AUDIO VO (Jika ada)
+        await new Promise((resolve, reject) => {
+            let mixCmd = ffmpeg().input(rawOutputVideo);
+            
+            if (hasAudio) {
+                mixCmd.input(tempAudioPath).outputOptions([
+                    '-c:v copy',
+                    '-c:a aac',
+                    '-map 0:v:0',
+                    '-map 1:a:0',
+                    '-shortest' // Video akan berhenti otomatis saat audio habis (atau sebaliknya)
+                ]);
+            } else {
+                mixCmd.outputOptions(['-c:v copy']);
+            }
+
+            mixCmd.save(outputFilePath)
+                .on('end', () => resolve())
+                .on('error', (err) => reject(err));
+        });
+
+        console.log("✅ Perakitan video dan audio selesai! Mengunggah ke YouTube...");
 
         const res = await youtube.videos.insert({
             part: 'snippet,status',
