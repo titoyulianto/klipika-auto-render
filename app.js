@@ -42,110 +42,83 @@ async function main() {
     let hasAudio = false;
 
     try {
-        // 1. Download Audio VO jika ada URL-nya
+        // 1. Download Audio VO 
         if (audioUrl && audioUrl.startsWith('http')) {
             try {
                 console.log(`📥 Mendownload Audio VO dari: ${audioUrl}`);
                 await downloadFile(audioUrl, tempAudioPath);
                 hasAudio = true;
-                console.log("✅ Audio VO berhasil didownload!");
             } catch (err) {
-                console.log("⚠️ Gagal download audio VO, lanjut tanpa audio:", err.message);
+                console.log("⚠️ Gagal download audio VO, lanjut tanpa audio.");
             }
         }
 
-        // 2. Download dan render tiap adegan menjadi klip terpisah (.mp4)
+        // 2. Render adegan + Tambah Efek Judul Teks (Breaking News)
+        let safeJudul = judul.replace(/[^a-zA-Z0-9 ]/g, "").toUpperCase(); // Bersihkan teks dari simbol aneh
+        
         for (let i = 0; i < scenes.length; i++) {
             let scene = scenes[i];
             let tempFile = `./temp_asset_${i}.${scene.type === 'video' ? 'mp4' : 'jpg'}`;
             let clipOutput = `./clip_${i}.mp4`;
             
-            console.log(`📥 Mendownload aset ${i+1}/${scenes.length}: ${scene.url}`);
-            try {
-                await downloadFile(scene.url, tempFile);
-            } catch (e) {
-                console.log(`⚠️ Gagal download aset ${i+1}, pakai gambar default.`);
-                scene.url = "https://images.pexels.com/photos/3944688/pexels-photo-3944688.jpeg?auto=compress&cs=tinysrgb&w=720&h=1280&dpr=1";
-                scene.type = "image";
-                await downloadFile(scene.url, tempFile);
-            }
+            await downloadFile(scene.url, tempFile);
 
-            console.log(`🎞️ Merender klip ${i+1} (${scene.duration} detik)...`);
+            console.log(`🎞️ Merender klip ${i+1}...`);
             await new Promise((resolve, reject) => {
                 let cmd = ffmpeg();
-                if (scene.type === 'video') {
-                    cmd.input(tempFile);
-                } else {
-                    cmd.input(tempFile).inputOptions(['-loop 1']);
-                }
+                if (scene.type === 'video') { cmd.input(tempFile); } 
+                else { cmd.input(tempFile).inputOptions(['-loop 1']); }
 
                 cmd.outputOptions([
                     '-c:v libx264',
                     '-t ' + scene.duration,
                     '-pix_fmt yuv420p',
-                    '-vf scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                    // Baris sakti ini yang bikin efek Zoom + Tulisan merah ala Breaking News!
+                    `-vf scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1,drawtext=text='${safeJudul}':fontcolor=white:fontsize=40:box=1:boxcolor=red@0.8:boxborderw=10:x=(w-text_w)/2:y=150`,
                     '-r 30'
                 ])
                 .save(clipOutput)
                 .on('end', () => resolve())
                 .on('error', (err) => reject(err));
             });
-
             clipPaths.push(clipOutput);
         }
 
-        // 3. Gabungkan (Concatenate) semua klip adegan menjadi satu video utuh
-        console.log("🔗 Menggabungkan seluruh klip adegan...");
+        // 3. Gabungkan semua klip gambar/video
         let listTxtContent = clipPaths.map(p => `file '${path.resolve(p)}'`).join('\n');
         fs.writeFileSync('./list.txt', listTxtContent);
 
         await new Promise((resolve, reject) => {
-            ffmpeg()
-            .input('./list.txt')
-            .inputOptions(['-f concat', '-safe 0'])
-            .outputOptions(['-c copy'])
-            .save(rawOutputVideo)
-            .on('end', () => resolve())
-            .on('error', (err) => reject(err));
+            ffmpeg().input('./list.txt').inputOptions(['-f concat', '-safe 0'])
+            .outputOptions(['-c copy']).save(rawOutputVideo)
+            .on('end', () => resolve()).on('error', (err) => reject(err));
         });
 
-        // 4. MENGGABUNGKAN VIDEO DENGAN AUDIO VO (Jika ada)
+        // 4. MENGGABUNGKAN VIDEO DENGAN AUDIO VO
         await new Promise((resolve, reject) => {
             let mixCmd = ffmpeg().input(rawOutputVideo);
-            
             if (hasAudio) {
                 mixCmd.input(tempAudioPath).outputOptions([
-                    '-c:v copy',
-                    '-c:a aac',
-                    '-map 0:v:0',
-                    '-map 1:a:0',
-                    '-shortest' // Video akan berhenti otomatis saat audio habis (atau sebaliknya)
+                    '-c:v copy', '-c:a aac', '-map 0:v:0', '-map 1:a:0', '-shortest'
                 ]);
             } else {
                 mixCmd.outputOptions(['-c:v copy']);
             }
-
             mixCmd.save(outputFilePath)
-                .on('end', () => resolve())
-                .on('error', (err) => reject(err));
+                  .on('end', () => resolve())
+                  .on('error', (err) => reject(err));
         });
 
-        console.log("✅ Perakitan video dan audio selesai! Mengunggah ke YouTube...");
-
+        // 5. Upload ke YouTube
+        console.log("✅ Perakitan video selesai! Mengunggah ke YouTube...");
         const res = await youtube.videos.insert({
             part: 'snippet,status',
             requestBody: {
-                snippet: {
-                    title: judul,
-                    description: deskripsi,
-                    tags: ['klipika', 'shorts', 'auto', 'news'],
-                    categoryId: '22'
-                },
+                snippet: { title: judul, description: deskripsi, tags: ['klipika', 'shorts'], categoryId: '22' },
                 status: { privacyStatus: 'private', selfDeclaredMadeForKids: false }
             },
             media: { body: fs.createReadStream(outputFilePath) }
         });
-
         console.log("🎉 SUCCESS, BRO! Link YouTube: https://youtu.be/" + res.data.id);
 
     } catch (error) {
