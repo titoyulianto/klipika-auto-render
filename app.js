@@ -7,7 +7,7 @@ const CLIENT_ID = process.env.YOUTUBE_CLIENT_ID;
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.YOUTUBE_REFRESH_TOKEN;
 
-// 🎯 TANGKAP DATA (PAYLOAD) DARI VS CODE LOKAL LU
+// 🎯 TANGKAP DATA (PAYLOAD) DARI UI KLIPIKA (Cloudflare/Lokal)
 let payload = {};
 try {
     payload = JSON.parse(process.env.PAYLOAD_DARI_HP || '{}');
@@ -15,9 +15,10 @@ try {
     console.log("Payload kosong atau format salah");
 }
 
-// Gunakan data dari lokal, kalau kosong pakai default
-const judul = payload.judulVideo || "Video Default Tanpa Payload";
-const warna = payload.warnaBackground || "green"; 
+// Gunakan data dari UI Klipika, kalau kosong pakai default
+const judul = payload.judulVideo || "Judul Default (Payload Gagal Masuk)";
+const deskripsi = payload.deskripsiVideo || "Deskripsi default (Payload Gagal Masuk).";
+const warna = payload.warnaBackground || "blue"; 
 const durasi = payload.durasi || 5;
 
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, "https://developers.google.com/oauthplayground");
@@ -25,10 +26,10 @@ oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
 const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
 async function main() {
-    console.log(`🎬 Menerima perintah dari lokal! Render warna: ${warna}, Durasi: ${durasi} detik`);
+    console.log(`🎬 Menerima perintah dari Klipika UI! Render warna: ${warna}, Durasi: ${durasi} detik`);
     const outputFilePath = './output_video.mp4';
 
-    // Bikin video sesuai warna & durasi yang dikirim dari VS Code
+    // Bikin video sesuai warna & durasi yang dikirim dari UI
     await new Promise((resolve, reject) => {
         ffmpeg()
         .input(`color=c=${warna}:s=720x1280:d=${durasi}`)
@@ -39,7 +40,7 @@ async function main() {
         .on('error', (err) => reject(err));
     });
 
-    console.log("🚀 Render selesai. Upload ke YouTube...");
+    console.log("🚀 Render video selesai. Memulai upload ke YouTube...");
     
     try {
         const res = await youtube.videos.insert({
@@ -47,15 +48,19 @@ async function main() {
             requestBody: {
                 snippet: {
                     title: judul,
-                    description: "Video ini dirender otomatis sesuai request dinamis dari Klipika UI Lokal!",
-                    tags: ['klipika', 'shorts', 'auto', 'bot'],
+                    description: deskripsi,
+                    tags: ['klipika', 'shorts', 'auto', 'news'],
                     categoryId: '22'
                 },
-                status: { privacyStatus: 'private', selfDeclaredMadeForKids: false }
+                status: { 
+                    privacyStatus: 'private', // Tetap private untuk uji coba
+                    selfDeclaredMadeForKids: false 
+                }
             },
             media: { body: fs.createReadStream(outputFilePath) }
         });
-        console.log("🎉 SUCCESS, BRO! Link: https://youtu.be/" + res.data.id);
+        console.log("🎉 SUCCESS, BRO! Video berhasil mendarat di YouTube!");
+        console.log("🔗 Cek Studio YouTube lu atau klik link ini: https://youtu.be/" + res.data.id);
     } catch (error) {
         console.error("❌ Gagal upload:", error.message);
     }
