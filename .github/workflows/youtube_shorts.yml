@@ -18,13 +18,10 @@ jobs:
       with:
         node-version: '18'
 
-    - name: Install FFmpeg untuk Konversi Video YouTube
-      run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-    - name: Install Library Tambahan
+    - name: Install Library Tambahan (YouTube API)
       run: npm install googleapis --no-audit --no-fund
 
-    - name: Eksekusi Auto-Upload ke YouTube
+    - name: Eksekusi Auto-Upload Kilat ke YouTube
       env:
         YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
         YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
