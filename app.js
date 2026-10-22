@@ -2,62 +2,62 @@ const fs = require('fs');
 const { google } = require('googleapis');
 const ffmpeg = require('fluent-ffmpeg');
 
-// 1. Tarik Kunci Sakti dari Brankas GitHub
+// Tarik Kunci dari Brankas
 const CLIENT_ID = process.env.YOUTUBE_CLIENT_ID;
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.YOUTUBE_REFRESH_TOKEN;
 
-// Setup Koneksi ke YouTube
+// 🎯 TANGKAP DATA (PAYLOAD) DARI VS CODE LOKAL LU
+let payload = {};
+try {
+    payload = JSON.parse(process.env.PAYLOAD_DARI_HP || '{}');
+} catch (e) {
+    console.log("Payload kosong atau format salah");
+}
+
+// Gunakan data dari lokal, kalau kosong pakai default
+const judul = payload.judulVideo || "Video Default Tanpa Payload";
+const warna = payload.warnaBackground || "green"; 
+const durasi = payload.durasi || 5;
+
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, "https://developers.google.com/oauthplayground");
 oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
 const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
 async function main() {
-    console.log("🎬 Tahap 1: Memulai proses render video dengan FFmpeg...");
+    console.log(`🎬 Menerima perintah dari lokal! Render warna: ${warna}, Durasi: ${durasi} detik`);
     const outputFilePath = './output_video.mp4';
 
-    // Bikin video Polos (Warna Biru) durasi 5 Detik ukuran Vertikal 9:16 untuk ngetes render
+    // Bikin video sesuai warna & durasi yang dikirim dari VS Code
     await new Promise((resolve, reject) => {
         ffmpeg()
-        .input('color=c=blue:s=720x1280:d=5')
+        .input(`color=c=${warna}:s=720x1280:d=${durasi}`)
         .inputFormat('lavfi')
         .outputOptions(['-c:v libx264', '-pix_fmt yuv420p'])
         .save(outputFilePath)
-        .on('end', () => {
-            console.log("✅ Render Video Selesai!");
-            resolve();
-        })
-        .on('error', (err) => {
-            console.error("❌ Gagal render:", err);
-            reject(err);
-        });
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err));
     });
 
-    console.log("🚀 Tahap 2: Mulai upload otomatis ke YouTube Shorts...");
+    console.log("🚀 Render selesai. Upload ke YouTube...");
     
     try {
         const res = await youtube.videos.insert({
             part: 'snippet,status',
             requestBody: {
                 snippet: {
-                    title: "Testing Klipika Cloud Render 🔥",
-                    description: "Video ini dirender dan diupload otomatis 100% dari mesin GitHub Actions tanpa HP meledak!",
+                    title: judul,
+                    description: "Video ini dirender otomatis sesuai request dinamis dari Klipika UI Lokal!",
                     tags: ['klipika', 'shorts', 'auto', 'bot'],
                     categoryId: '22'
                 },
-                status: {
-                    privacyStatus: 'private', // Sengaja diset PRIVATE dulu buat ngetes biar aman!
-                    selfDeclaredMadeForKids: false
-                }
+                status: { privacyStatus: 'private', selfDeclaredMadeForKids: false }
             },
-            media: {
-                body: fs.createReadStream(outputFilePath)
-            }
+            media: { body: fs.createReadStream(outputFilePath) }
         });
-        console.log("🎉 SUCCESS, BRO! Video berhasil mendarat di YouTube!");
-        console.log("🔗 Cek Studio YouTube lu atau klik link ini: https://youtu.be/" + res.data.id);
+        console.log("🎉 SUCCESS, BRO! Link: https://youtu.be/" + res.data.id);
     } catch (error) {
-        console.error("❌ Waduh, gagal upload:", error.message);
+        console.error("❌ Gagal upload:", error.message);
     }
 }
 
